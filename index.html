@@ -226,6 +226,52 @@ function regionesDeEvento(ev){
   return set.size ? [...set] : ["@otras"];
 }
 
+/* Calendarización: extrae de la tabla del evento los días con afectación real por región.
+   Devuelve {porRegion:{cod:Set(diaKey)}, global:Set|null, hayRegiones:bool} o null si no hay tabla útil. */
+function calendarioDesdeTabla(e){
+  if(!e.tablaHTML || e.tablaHTML.length<50) return null;
+  let doc;
+  try{ doc = new DOMParser().parseFromString(e.tablaHTML,"text/html"); }catch(_){ return null; }
+  const filas = [...doc.querySelectorAll("tr")];
+  if(!filas.length) return null;
+  const porRegion = {}; const global = new Set();
+  let regionActual = null, diasCols = null, hayRegiones = false, hayDias = false;
+  const fechaDeNum = num=>{
+    const ini = new Date(e.desde.getTime()-2*864e5), fin = new Date(e.hasta.getTime()+2*864e5);
+    for(let t=new Date(ini); t<=fin; t=new Date(t.getTime()+864e5)){
+      if(t.getDate()===num) return claveDia(t);
+    }
+    return null;
+  };
+  for(const tr of filas){
+    const ths=[...tr.querySelectorAll("th")], tds=[...tr.querySelectorAll("td")];
+    const regTh = ths.find(th=>/regi/i.test(th.textContent)&&th.textContent.includes(":"));
+    if(regTh){
+      hayRegiones = true; regionActual = null; diasCols = null;
+      const n = normalizar(regTh.textContent.split(":")[1]||"");
+      for(const c of CODIGOS){ if(PATRONES_REGION[c].some(p=>n.includes(p))){ regionActual=c; break; } }
+      continue;
+    }
+    if(ths.length>1){ // encabezados de días: ["Zona","viernes 17",...]
+      diasCols = ths.map(th=>{ const m=th.textContent.match(/(\d{1,2})/); return m?fechaDeNum(+m[1]):null; });
+      if(diasCols.some(Boolean)) hayDias = true;
+      continue;
+    }
+    if(tds.length>1 && diasCols){
+      tds.forEach((td,i)=>{
+        const k = diasCols[i]; if(!k) return;
+        const v = td.textContent.trim();
+        if(v && v!=="-" && v!=="--"){
+          global.add(k);
+          if(regionActual) (porRegion[regionActual]=porRegion[regionActual]||new Set()).add(k);
+        }
+      });
+    }
+  }
+  if(!hayDias) return null;
+  return {porRegion, global: global.size?global:null, hayRegiones};
+}
+
 function iconoDe(fen){
   const n = normalizar(fen);
   for(const [re,ic] of ICONOS){ if(re.test(n)) return ic; }
@@ -272,6 +318,8 @@ function procesar(){
       regiones: regionesDeEvento(ev)
     };
   });
+  // calendarización: días con afectación real según la tabla del evento
+  EVENTOS.forEach(e=>{ try{ e.calendario = calendarioDesdeTabla(e); }catch(_){ e.calendario = null; } });
 
   fenomenosConocidos = [...new Set(EVENTOS.map(e=>e.fenomeno))].sort();
   if(fenomenosActivos.size===0 || [...fenomenosActivos].some(f=>!fenomenosConocidos.includes(f)))
@@ -340,10 +388,18 @@ function pintar(){
   const celdas = {}; // codigoRegion|claveDia -> [eventos]
   visibles.forEach(e=>{
     e.regiones.forEach(r=>{
+      // días activos para ESTA región según la calendarización del evento;
+      // si la tabla no informa esta región, se usa el rango completo de vigencia
+      let activos = null;
+      if(e.calendario){
+        if(e.calendario.porRegion[r]) activos = e.calendario.porRegion[r];
+        else if(!e.calendario.hayRegiones && e.calendario.global) activos = e.calendario.global;
+      }
       dias.forEach(d=>{
         const d0=new Date(e.desde); d0.setHours(0,0,0,0);
         const d1=new Date(e.hasta); d1.setHours(23,59,59,999);
-        if(d>=d0 && d<=d1){
+        const dentro = activos ? activos.has(claveDia(d)) : (d>=d0 && d<=d1);
+        if(dentro){
           const k=r+"|"+claveDia(d);
           (celdas[k]=celdas[k]||[]).push(e);
         }
