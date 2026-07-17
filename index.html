@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Visualizador de Alertamientos DMC</title>
+<style>
+  :root{
+    --aviso:#f2b705; --aviso-bg:#fdf3d0;
+    --alerta:#f2740b; --alerta-bg:#fde4cc;
+    --alarma:#d81e1e; --alarma-bg:#f9d3d3;
+    --ink:#1c2733; --muted:#5c6b7a; --line:#dde4ea; --bg:#f4f6f8; --card:#ffffff;
+    --hoy:#e8f1fb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+  header{background:#12314f;color:#fff;padding:14px 20px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+  header h1{font-size:18px;margin:0;font-weight:700}
+  header .sub{font-size:12px;opacity:.85}
+  .resumen{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .cnt{border-radius:14px;padding:3px 12px;font-weight:700;font-size:13px;color:#1c2733}
+  .cnt.aviso{background:var(--aviso)} .cnt.alerta{background:var(--alerta);color:#fff} .cnt.alarma{background:var(--alarma);color:#fff}
+  button.recargar{background:#fff;color:#12314f;border:none;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;font-size:13px}
+  button.recargar:hover{background:#dce9f7}
+  .barra{display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding:10px 20px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:30}
+  .grupo{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .grupo .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin-right:2px}
+  .chip{border:1.5px solid var(--line);background:#fff;border-radius:16px;padding:4px 12px;cursor:pointer;font-size:13px;user-select:none;color:var(--muted)}
+  .chip.on{color:var(--ink);border-color:currentColor;font-weight:600}
+  .chip.on.nivel-Aviso{background:var(--aviso-bg);border-color:var(--aviso)}
+  .chip.on.nivel-Alerta{background:var(--alerta-bg);border-color:var(--alerta)}
+  .chip.on.nivel-Alarma{background:var(--alarma-bg);border-color:var(--alarma)}
+  .chip.on.fen{background:#e8f1fb;border-color:#12314f}
+  .estado{padding:8px 20px;font-size:12px;color:var(--muted)}
+  .estado b{color:var(--ink)}
+  .tabla-wrap{overflow:auto;margin:0 20px 30px;background:var(--card);border:1px solid var(--line);border-radius:10px;max-height:calc(100vh - 210px)}
+  table.matriz{border-collapse:separate;border-spacing:0;width:100%;min-width:760px}
+  .matriz th,.matriz td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:6px 8px;vertical-align:top}
+  .matriz thead th{position:sticky;top:0;background:#eef2f6;z-index:20;text-align:center;font-size:12.5px;padding:8px 6px}
+  .matriz thead th.hoy{background:#d5e6fa}
+  .matriz thead th .dnum{display:block;font-size:16px}
+  .matriz td.region, .matriz thead th.region{position:sticky;left:0;background:#eef2f6;z-index:10;text-align:left;font-weight:600;font-size:13px;min-width:150px;white-space:nowrap}
+  .matriz thead th.region{z-index:40}
+  .matriz td{background:#fff;min-width:120px;height:38px}
+  .matriz td.hoy{background:var(--hoy)}
+  .matriz tr.sin-eventos td{color:#c6ced6}
+  .badge{display:flex;align-items:center;gap:5px;border-radius:6px;padding:3px 7px;margin:2px 0;font-size:12px;font-weight:600;cursor:pointer;border-left:4px solid;line-height:1.25}
+  .badge:hover{filter:brightness(.95)}
+  .badge.Aviso{background:var(--aviso-bg);border-color:var(--aviso)}
+  .badge.Alerta{background:var(--alerta-bg);border-color:var(--alerta)}
+  .badge.Alarma{background:var(--alarma-bg);border-color:var(--alarma)}
+  .leyenda{display:flex;gap:16px;flex-wrap:wrap;padding:0 20px 20px;font-size:12px;color:var(--muted);align-items:center}
+  .leyenda .sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+  .aviso-msg{margin:40px auto;text-align:center;color:var(--muted);font-size:15px;max-width:520px}
+  /* Modal */
+  .overlay{position:fixed;inset:0;background:rgba(10,20,30,.55);display:none;align-items:flex-start;justify-content:center;z-index:100;padding:30px 15px;overflow:auto}
+  .overlay.abierto{display:flex}
+  .modal{background:#fff;border-radius:12px;max-width:860px;width:100%;padding:22px 26px;position:relative;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+  .modal h2{margin:0 40px 6px 0;font-size:17px;line-height:1.35}
+  .modal .cerrar{position:absolute;top:12px;right:14px;border:none;background:#eef2f6;border-radius:8px;font-size:16px;width:32px;height:32px;cursor:pointer}
+  .modal .meta{display:grid;grid-template-columns:130px 1fr;gap:4px 10px;margin:14px 0;font-size:13.5px}
+  .modal .meta dt{color:var(--muted);font-weight:600}
+  .modal .meta dd{margin:0}
+  .pill{display:inline-block;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:700;color:#1c2733}
+  .pill.Aviso{background:var(--aviso)} .pill.Alerta{background:var(--alerta);color:#fff} .pill.Alarma{background:var(--alarma);color:#fff}
+  .modal h3{font-size:14px;margin:16px 0 6px}
+  .modal a{color:#12569e}
+  .tabla-int{overflow:auto;margin-top:6px}
+  .tabla-int table{border-collapse:collapse;font-size:12.5px;width:100%}
+  .tabla-int th,.tabla-int td{border:1px solid var(--line);padding:4px 8px;text-align:center}
+  .tabla-int th{background:#eef2f6}
+  @media (max-width:700px){ .modal .meta{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>⛈️ Alertamientos Meteorológicos — DMC</h1>
+    <div class="sub">Avisos, Alertas y Alarmas vigentes · Dirección Meteorológica de Chile</div>
+  </div>
+  <div class="resumen" id="resumen"></div>
+  <button class="recargar" onclick="cargarDatos()">⟳ Actualizar</button>
+</header>
+
+<div class="barra">
+  <div class="grupo" id="filtroNiveles"><span class="lbl">Nivel</span></div>
+  <div class="grupo" id="filtroFenomenos"><span class="lbl">Fenómeno</span></div>
+</div>
+
+<div class="estado" id="estado">Cargando datos de la DMC…</div>
+<div id="contenido"></div>
+
+<div class="leyenda">
+  <span><span class="sw" style="background:var(--aviso)"></span><b>Aviso</b>: severidad moderada</span>
+  <span><span class="sw" style="background:var(--alerta)"></span><b>Alerta</b>: severidad fuerte</span>
+  <span><span class="sw" style="background:var(--alarma)"></span><b>Alarma</b>: severidad intensa</span>
+  <span>· Haz clic en un evento para ver el detalle. Fuente: <a href="https://www.meteochile.gob.cl" target="_blank">meteochile.gob.cl</a></span>
+</div>
+
+<div class="overlay" id="overlay" onclick="if(event.target===this)cerrarModal()">
+  <div class="modal" id="modal"></div>
+</div>
+
+<script>
+"use strict";
+
+/* ---------- Regiones DMC (norte a sur) ---------- */
+const REGIONES = [
+  ["01a","Arica y Parinacota"],
+  ["01b","Tarapacá"],
+  ["02","Antofagasta"],
+  ["03","Atacama"],
+  ["04","Coquimbo"],
+  ["05","Valparaíso"],
+  ["05m","Metropolitana"],
+  ["06","O'Higgins"],
+  ["07","Maule"],
+  ["08a","Ñuble"],
+  ["08b","Biobío"],
+  ["09","La Araucanía"],
+  ["10a","Los Ríos"],
+  ["10b","Los Lagos"],
+  ["11","Aysén"],
+  ["12","Magallanes"]
+];
+const CODIGOS = REGIONES.map(r=>r[0]);
+const NOMBRE_REGION = Object.fromEntries(REGIONES);
+// patrones normalizados para reconocer regiones en textos
+const PATRONES_REGION = {
+  "01a":["arica"], "01b":["tarapaca"], "02":["antofagasta"], "03":["atacama"],
+  "04":["coquimbo"], "05":["valparaiso"], "05m":["metropolitana"], "06":["higgins"],
+  "07":["maule"], "08a":["nuble"], "08b":["biobio"], "09":["araucania"],
+  "10a":["los rios"], "10b":["los lagos"], "11":["aysen"], "12":["magallanes"]
+};
+
+// provincias por región (para eventos definidos por área/provincia)
+const PROVINCIAS = {
+  "01a":["arica","parinacota"],
+  "01b":["iquique","tamarugal"],
+  "02":["antofagasta","el loa","tocopilla"],
+  "03":["copiapo","chanaral","huasco"],
+  "04":["elqui","limari","choapa"],
+  "05":["valparaiso","isla de pascua","los andes","petorca","quillota","san antonio","san felipe","marga marga"],
+  "05m":["santiago","cordillera","chacabuco","maipo","melipilla","talagante"],
+  "06":["cachapoal","colchagua","cardenal caro"],
+  "07":["talca","cauquenes","curico","linares"],
+  "08a":["diguillin","itata","punilla"],
+  "08b":["concepcion","arauco","biobio"],
+  "09":["cautin","malleco"],
+  "10a":["valdivia","ranco"],
+  "10b":["llanquihue","chiloe","osorno","palena"],
+  "11":["coyhaique","aysen","capitan prat","general carrera"],
+  "12":["magallanes","antartica","tierra del fuego","ultima esperanza"]
+};
+const MESES = {enero:0,febrero:1,marzo:2,abril:3,mayo:4,junio:5,julio:6,agosto:7,septiembre:8,setiembre:8,octubre:9,noviembre:10,diciembre:11};
+const DIAS_SEM = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+const MESES_CORTO = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+
+const ICONOS = [
+  [/viento/, "💨"], [/nevada|nieve/, "❄️"], [/precipitaci/, "🌧️"],
+  [/tormenta/, "⛈️"], [/helada/, "🥶"], [/temperatura|calor/, "🌡️"],
+  [/niebla|neblina/, "🌫️"], [/marejada/, "🌊"], [/polvo|viento blanco/, "🌪️"]
+];
+
+let EVENTOS = [];          // eventos parseados
+let nivelesActivos = new Set(["Aviso","Alerta","Alarma"]);
+let fenomenosActivos = new Set();  // se llena al cargar
+let fenomenosConocidos = [];
+
+/* ---------- Utilidades ---------- */
+const decodificador = document.createElement("textarea");
+function decodificar(s){ decodificador.innerHTML = s || ""; return decodificador.value; }
+function normalizar(s){ return decodificar(String(s||"")).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,""); }
+function esc(s){ return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function parseFecha(texto){
+  const s = normalizar(texto);
+  const m = s.match(/(\d{1,2})\s+de\s+([a-z]+)(?:\s+de[l]?\s+(\d{4}))?/);
+  if(!m || !(m[2] in MESES)) return null;
+  const hoy = new Date();
+  let anio = m[3] ? +m[3] : hoy.getFullYear();
+  let f = new Date(anio, MESES[m[2]], +m[1]);
+  if(!m[3]){ // sin año: corrige cambio de año
+    const diff = f - hoy;
+    if(diff < -180*864e5) f = new Date(anio+1, MESES[m[2]], +m[1]);
+    if(diff >  180*864e5) f = new Date(anio-1, MESES[m[2]], +m[1]);
+  }
+  const per = (s.match(/madrugada|manana|tarde|noche/)||[])[0] || "";
+  const PER = {manana:"mañana"}[per] || per;
+  return {fecha:f, periodo:PER};
+}
+function claveDia(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+
+function regionesDeEvento(ev){
+  const set = new Set();
+  const tz = normalizar(ev.tipoZonaAfecta);
+  if((tz==="zonas" || tz==="regiones") && ev.dataZonaAfecta){
+    ev.dataZonaAfecta.split(",").forEach(z=>{
+      const p = z.trim().split("_")[0];
+      if(NOMBRE_REGION[p]) set.add(p);
+    });
+  }
+  if(set.size===0 && ev.tablaHTML){
+    const nombres = [...decodificar(ev.tablaHTML).matchAll(/Región:\s*([^<\n]+)/gi)].map(x=>normalizar(x[1]));
+    nombres.forEach(n=>{ for(const c of CODIGOS){ if(PATRONES_REGION[c].some(p=>n.includes(p))) set.add(c); } });
+  }
+  if(set.size===0){
+    const texto = normalizar((ev.titulo||"")+" "+(ev.textoZonaAfecta||""));
+    const encontrados = [];
+    for(const c of CODIGOS){ if(PATRONES_REGION[c].some(p=>texto.includes(p))) encontrados.push(c); }
+    if(encontrados.length>=2 && /desde/.test(texto)){
+      const i0 = CODIGOS.indexOf(encontrados[0]), i1 = CODIGOS.indexOf(encontrados[encontrados.length-1]);
+      for(let i=Math.min(i0,i1); i<=Math.max(i0,i1); i++) set.add(CODIGOS[i]);
+    } else encontrados.forEach(c=>set.add(c));
+  }
+  if(set.size===0){
+    // eventos por área: buscar "provincia(s) de …" y mapear a su región
+    const texto = normalizar((ev.titulo||"")+" "+(ev.textoZonaAfecta||""));
+    for(const m of texto.matchAll(/provincias?\s+de\s+([^(.;]+)/g)){
+      const seg = m[1];
+      for(const c of CODIGOS){
+        if((PROVINCIAS[c]||[]).some(p=>new RegExp("\\b"+p.replace(/\s+/g,"\\s+")+"\\b").test(seg))) set.add(c);
+      }
+    }
+  }
+  return set.size ? [...set] : ["@otras"];
+}
+
+function iconoDe(fen){
+  const n = normalizar(fen);
+  for(const [re,ic] of ICONOS){ if(re.test(n)) return ic; }
+  return "⚠️";
+}
+
+/* ---------- Carga de datos ---------- */
+function cargarDatos(){
+  document.getElementById("estado").textContent = "Cargando datos de la DMC…";
+  delete window.AAA;
+  const viejo = document.getElementById("scriptAAA");
+  if(viejo) viejo.remove();
+  const sc = document.createElement("script");
+  sc.id = "scriptAAA";
+  sc.src = "https://archivos.meteochile.gob.cl/portaldmc/AAA/datos_AAA.js?t=" + Date.now();
+  sc.onload = ()=> procesar();
+  sc.onerror = ()=>{
+    document.getElementById("estado").innerHTML = "";
+    document.getElementById("contenido").innerHTML =
+      '<div class="aviso-msg">⚠️ No se pudieron descargar los datos de la DMC.<br>Revisa tu conexión a internet e intenta con el botón <b>Actualizar</b>.</div>';
+  };
+  document.body.appendChild(sc);
+}
+
+function procesar(){
+  const crudos = Array.isArray(window.AAA) ? window.AAA : [];
+  EVENTOS = crudos.map((ev,i)=>{
+    const d = parseFecha(ev.desde) || {fecha:new Date(), periodo:""};
+    const h = parseFecha(ev.hasta) || d;
+    return {
+      idx:i,
+      tipo: decodificar(ev.tipo||"").trim(),                 // Aviso / Alerta / Alarma
+      fenomeno: decodificar(ev.fenomeno||"").trim(),
+      codigo: decodificar(ev.codigoMeteo||""),
+      emision: decodificar(ev.emision||""),
+      titulo: decodificar(ev.titulo||""),
+      condicion: decodificar(ev.condicionSinoptica||""),
+      observacion: decodificar(ev.observacion||""),
+      desdeTxt: decodificar(ev.desde||""), hastaTxt: decodificar(ev.hasta||""),
+      desde: d.fecha, hasta: h.fecha,
+      zonaTexto: decodificar(ev.textoZonaAfecta||""),
+      tablaTitulo: decodificar(ev.tablaTitulo||""),
+      tablaHTML: ev.tablaHTML || "",
+      regiones: regionesDeEvento(ev)
+    };
+  });
+
+  fenomenosConocidos = [...new Set(EVENTOS.map(e=>e.fenomeno))].sort();
+  if(fenomenosActivos.size===0 || [...fenomenosActivos].some(f=>!fenomenosConocidos.includes(f)))
+    fenomenosActivos = new Set(fenomenosConocidos);
+
+  pintarFiltros();
+  pintar();
+}
+
+/* ---------- Filtros ---------- */
+function pintarFiltros(){
+  const fn = document.getElementById("filtroNiveles");
+  fn.querySelectorAll(".chip").forEach(c=>c.remove());
+  ["Aviso","Alerta","Alarma"].forEach(niv=>{
+    const n = EVENTOS.filter(e=>e.tipo===niv).length;
+    const c = document.createElement("span");
+    c.className = "chip nivel-"+niv+(nivelesActivos.has(niv)?" on":"");
+    c.textContent = niv+" ("+n+")";
+    c.onclick = ()=>{ nivelesActivos.has(niv)?nivelesActivos.delete(niv):nivelesActivos.add(niv); pintarFiltros(); pintar(); };
+    fn.appendChild(c);
+  });
+  const ff = document.getElementById("filtroFenomenos");
+  ff.querySelectorAll(".chip").forEach(c=>c.remove());
+  fenomenosConocidos.forEach(f=>{
+    const c = document.createElement("span");
+    c.className = "chip fen"+(fenomenosActivos.has(f)?" on":"");
+    c.textContent = iconoDe(f)+" "+f;
+    c.onclick = ()=>{ fenomenosActivos.has(f)?fenomenosActivos.delete(f):fenomenosActivos.add(f); pintarFiltros(); pintar(); };
+    ff.appendChild(c);
+  });
+}
+
+/* ---------- Render principal ---------- */
+function pintar(){
+  const cont = document.getElementById("contenido");
+  const visibles = EVENTOS.filter(e=>nivelesActivos.has(e.tipo) && fenomenosActivos.has(e.fenomeno));
+
+  // resumen
+  const res = document.getElementById("resumen");
+  res.innerHTML = ["Aviso","Alerta","Alarma"].map(niv=>{
+    const n = EVENTOS.filter(e=>e.tipo===niv).length;
+    return '<span class="cnt '+niv.toLowerCase()+'">'+n+" "+niv+(n===1?"":"s")+"</span>";
+  }).join("");
+
+  const ahora = new Date();
+  document.getElementById("estado").innerHTML =
+    "<b>"+EVENTOS.length+"</b> alertamientos vigentes ("+visibles.length+" visibles con los filtros) · Datos DMC cargados el <b>"+
+    ahora.toLocaleDateString("es-CL",{weekday:"long",day:"numeric",month:"long"})+" a las "+
+    ahora.toLocaleTimeString("es-CL",{hour:"2-digit",minute:"2-digit"})+"</b>";
+
+  if(EVENTOS.length===0){
+    cont.innerHTML = '<div class="aviso-msg">✅ La DMC no informa avisos, alertas ni alarmas meteorológicas vigentes en este momento.</div>';
+    return;
+  }
+
+  // columnas de días: hoy → máximo "hasta" (mínimo 4, máximo 12 días)
+  const hoy0 = new Date(); hoy0.setHours(0,0,0,0);
+  let maxF = new Date(hoy0);
+  visibles.forEach(e=>{ if(e.hasta>maxF) maxF = e.hasta; });
+  let nDias = Math.round((maxF-hoy0)/864e5)+1;
+  nDias = Math.max(4, Math.min(12, nDias));
+  const dias = [];
+  for(let i=0;i<nDias;i++){ const d=new Date(hoy0); d.setDate(d.getDate()+i); dias.push(d); }
+
+  // matriz región × día
+  const celdas = {}; // codigoRegion|claveDia -> [eventos]
+  visibles.forEach(e=>{
+    e.regiones.forEach(r=>{
+      dias.forEach(d=>{
+        const d0=new Date(e.desde); d0.setHours(0,0,0,0);
+        const d1=new Date(e.hasta); d1.setHours(23,59,59,999);
+        if(d>=d0 && d<=d1){
+          const k=r+"|"+claveDia(d);
+          (celdas[k]=celdas[k]||[]).push(e);
+        }
+      });
+    });
+  });
+
+  let html = '<div class="tabla-wrap"><table class="matriz"><thead><tr><th class="region">Región</th>';
+  dias.forEach((d,i)=>{
+    html += '<th class="'+(i===0?"hoy":"")+'">'+DIAS_SEM[d.getDay()]+(i===0?" · HOY":"")+
+            '<span class="dnum">'+d.getDate()+" "+MESES_CORTO[d.getMonth()]+"</span></th>";
+  });
+  html += "</tr></thead><tbody>";
+
+  const filas = [...REGIONES];
+  if(visibles.some(e=>e.regiones.includes("@otras"))) filas.push(["@otras","Otras zonas (ver detalle)"]);
+  filas.forEach(([cod,nombre])=>{
+    const tieneAlgo = dias.some(d=>celdas[cod+"|"+claveDia(d)]);
+    html += '<tr class="'+(tieneAlgo?"":"sin-eventos")+'"><td class="region">'+esc(nombre)+"</td>";
+    dias.forEach((d,i)=>{
+      const evs = celdas[cod+"|"+claveDia(d)] || [];
+      html += '<td class="'+(i===0?"hoy":"")+'">';
+      // ordenar: Alarma > Alerta > Aviso
+      const orden = {Alarma:0, Alerta:1, Aviso:2};
+      evs.sort((a,b)=>(orden[a.tipo]??3)-(orden[b.tipo]??3));
+      evs.forEach(e=>{
+        html += '<div class="badge '+esc(e.tipo)+'" onclick="abrirModal('+e.idx+')" title="'+esc(e.titulo)+'">'+
+                iconoDe(e.fenomeno)+" "+esc(e.fenomeno)+"</div>";
+      });
+      if(evs.length===0) html += "·";
+      html += "</td>";
+    });
+    html += "</tr>";
+  });
+  html += "</tbody></table></div>";
+  cont.innerHTML = html;
+}
+
+/* ---------- Modal de detalle ---------- */
+function abrirModal(idx){
+  const e = EVENTOS.find(x=>x.idx===idx);
+  if(!e) return;
+  const enlace = "https://archivos.meteochile.gob.cl/portaldmc/AAA/doc/evento_"+e.codigo.replace(/\//g,"_")+".php";
+  const regiones = e.regiones.map(c=>NOMBRE_REGION[c]||e.zonaTexto||"Zona específica").join(", ") || "—";
+  let html =
+    '<button class="cerrar" onclick="cerrarModal()">✕</button>'+
+    "<h2>"+iconoDe(e.fenomeno)+" "+esc(e.titulo||e.fenomeno)+"</h2>"+
+    '<span class="pill '+esc(e.tipo)+'">'+esc(e.tipo)+"</span> &nbsp;<b>"+esc(e.codigo)+"</b>"+
+    '<dl class="meta">'+
+    "<dt>Emisión</dt><dd>"+esc(e.emision)+"</dd>"+
+    "<dt>Vigencia</dt><dd>Desde "+esc(e.desdeTxt)+"<br>Hasta "+esc(e.hastaTxt)+"</dd>"+
+    "<dt>Regiones</dt><dd>"+esc(regiones)+"</dd>"+
+    (e.zonaTexto ? "<dt>Zona afectada</dt><dd>"+esc(e.zonaTexto)+"</dd>" : "")+
+    (e.condicion ? "<dt>Condición sinóptica</dt><dd>"+esc(e.condicion)+"</dd>" : "")+
+    (e.observacion ? "<dt>Observación</dt><dd>"+esc(e.observacion)+"</dd>" : "")+
+    "</dl>";
+  if(e.tablaHTML && e.tablaHTML.length>50){
+    html += "<h3>"+esc(e.tablaTitulo||"Detalle por zona y día")+'</h3><div class="tabla-int">'+e.tablaHTML+"</div>";
+  }
+  html += '<p><a href="'+enlace+'" target="_blank">Ver ficha oficial del evento en la DMC ↗</a></p>';
+  document.getElementById("modal").innerHTML = html;
+  document.getElementById("overlay").classList.add("abierto");
+}
+function cerrarModal(){ document.getElementById("overlay").classList.remove("abierto"); }
+document.addEventListener("keydown",ev=>{ if(ev.key==="Escape") cerrarModal(); });
+
+/* ---------- Inicio + auto-actualización cada 15 min ---------- */
+cargarDatos();
+setInterval(cargarDatos, 15*60*1000);
+</script>
+</body>
+</html>
