@@ -128,7 +128,8 @@ const NOMBRE_REGION = Object.fromEntries(REGIONES);
 // patrones normalizados para reconocer regiones en textos
 const PATRONES_REGION = {
   "01a":["arica"], "01b":["tarapaca"], "02":["antofagasta"], "03":["atacama"],
-  "04":["coquimbo"], "05":["valparaiso"], "05m":["metropolitana"], "06":["higgins"],
+  "04":["coquimbo"], "05":["valparaiso","juan fernandez","isla de pascua","rapa nui"],
+  "05m":["metropolitana"], "06":["higgins"],
   "07":["maule"], "08a":["nuble"], "08b":["biobio"], "09":["araucania"],
   "10a":["los rios"], "10b":["los lagos"], "11":["aysen"], "12":["magallanes"]
 };
@@ -140,7 +141,7 @@ const PROVINCIAS = {
   "02":["antofagasta","el loa","tocopilla"],
   "03":["copiapo","chanaral","huasco"],
   "04":["elqui","limari","choapa"],
-  "05":["valparaiso","isla de pascua","los andes","petorca","quillota","san antonio","san felipe","marga marga"],
+  "05":["valparaiso","isla de pascua","juan fernandez","los andes","petorca","quillota","san antonio","san felipe","marga marga"],
   "05m":["santiago","cordillera","chacabuco","maipo","melipilla","talagante"],
   "06":["cachapoal","colchagua","cardenal caro"],
   "07":["talca","cauquenes","curico","linares"],
@@ -191,13 +192,38 @@ function parseFecha(texto){
 }
 function claveDia(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 
+/* Territorios insulares que administrativamente pertenecen a una región:
+   Juan Fernández e Isla de Pascua (Rapa Nui) son parte de Valparaíso. */
+const ZONAS_INSULARES = [
+  [/juan\s*fernandez|robinson\s*crusoe|masatierra|mas\s*a\s*tierra/, "05"],
+  [/isla\s*de\s*pascua|rapa\s*nui/, "05"]
+];
+
+/* Resuelve el código de región a partir de un código de zona de la DMC.
+   Devuelve [] si no se puede determinar. */
+function regionDeZona(z){
+  const bruto = String(z||"").trim();
+  if(!bruto) return [];
+  const pref = bruto.split("_")[0];
+  if(NOMBRE_REGION[pref]) return [pref];                 // 05, 05m, 08a, 11, …
+  const texto = normalizar(bruto.replace(/_/g," "));
+  for(const [re,cod] of ZONAS_INSULARES){ if(re.test(texto)) return [cod]; }
+  // sufijos desconocidos (p. ej. 05i, 05jf) → se atribuyen a su región numérica
+  const m = pref.match(/^(\d{2})/);
+  if(m){
+    if(NOMBRE_REGION[m[1]]) return [m[1]];
+    const hijos = CODIGOS.filter(c=>c.startsWith(m[1]) && c!=="05m");
+    if(hijos.length) return hijos;
+  }
+  return [];
+}
+
 function regionesDeEvento(ev){
   const set = new Set();
   const tz = normalizar(ev.tipoZonaAfecta);
   if((tz==="zonas" || tz==="regiones") && ev.dataZonaAfecta){
     ev.dataZonaAfecta.split(",").forEach(z=>{
-      const p = z.trim().split("_")[0];
-      if(NOMBRE_REGION[p]) set.add(p);
+      regionDeZona(z).forEach(c=>set.add(c));
     });
   }
   if(set.size===0 && ev.tablaHTML){
