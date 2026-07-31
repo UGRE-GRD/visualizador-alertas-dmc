@@ -35,7 +35,22 @@
   .chip.on.fen{background:#e8f1fb;border-color:#12314f}
   .estado{padding:8px 20px;font-size:12px;color:var(--muted)}
   .estado b{color:var(--ink)}
-  .tabla-wrap{overflow:auto;margin:0 20px 30px;background:var(--card);border:1px solid var(--line);border-radius:10px;max-height:calc(100vh - 210px)}
+  .tablero{display:flex;gap:14px;align-items:flex-start;padding:0 20px 24px}
+  .col-tabla{flex:1 1 auto;min-width:0}
+  .col-mapa{flex:0 0 340px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;position:sticky;top:62px}
+  .mapa-cab{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .mapa-cab b{font-size:13px}
+  .dias-mapa{display:flex;flex-wrap:wrap;gap:4px}
+  .dchip{border:1px solid var(--line);background:#fff;border-radius:12px;padding:2px 8px;font-size:11px;cursor:pointer;color:var(--muted);user-select:none;white-space:nowrap}
+  .dchip.on{background:#12314f;border-color:#12314f;color:#fff;font-weight:700}
+  #mapaChile{height:calc(100vh - 250px);min-height:430px;border-radius:8px;background:#eef2f6}
+  .mapa-pie{font-size:11px;color:var(--muted);margin:6px 0 0}
+  @media (max-width:1100px){
+    .tablero{flex-direction:column}
+    .col-mapa{position:static;flex:1 1 auto;width:100%}
+    #mapaChile{height:440px}
+  }
+  .tabla-wrap{overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:10px;max-height:calc(100vh - 210px)}
   table.matriz{border-collapse:separate;border-spacing:0;width:100%;min-width:900px;table-layout:fixed}
   .matriz th,.matriz td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:6px 8px;vertical-align:top}
   .matriz thead th{position:sticky;top:0;background:#eef2f6;z-index:20;text-align:center;font-size:12.5px;padding:8px 6px}
@@ -93,7 +108,18 @@
 </div>
 
 <div class="estado" id="estado">Cargando datos de la DMC…</div>
-<div id="contenido"></div>
+
+<div class="tablero">
+  <div class="col-tabla" id="contenido"></div>
+  <aside class="col-mapa">
+    <div class="mapa-cab">
+      <b>🗺️ Mapa de afectación</b>
+      <div class="dias-mapa" id="diasMapa"></div>
+    </div>
+    <div id="mapaChile"></div>
+    <p class="mapa-pie" id="mapaPie">Zonas coloreadas según el nivel más alto vigente.</p>
+  </aside>
+</div>
 
 <div class="leyenda">
   <span><span class="sw" style="background:var(--aviso)"></span><b>Aviso</b>: severidad moderada</span>
@@ -326,15 +352,22 @@ const ARCHIVOS_GEO = [
   "sistemaAAA_coordenadas_regiones_2024.js",
   "sistemaAAA_coordenadas_zonas_2024_region_11_antigua.js"
 ];
-let geoListo = false;
+let geoListo = false, geoPendientes = 0, repintarTimer = null;
 function cargarGeometrias(){
+  geoPendientes = ARCHIVOS_GEO.length;
   ARCHIVOS_GEO.forEach(f=>{
     const sc = document.createElement("script");
     sc.src = BASE_DMC + f;
-    sc.onload = ()=>{ geoListo = true; };
-    sc.onerror = ()=>{};
+    sc.onload = ()=>{ geoListo = true; geoCargado(); };
+    sc.onerror = ()=>{ geoCargado(); };
     document.head.appendChild(sc);
   });
+}
+function geoCargado(){
+  geoPendientes--;
+  CLAVES_GEO = null;                       // invalida la caché de claves
+  clearTimeout(repintarTimer);             // repinta el mapa cuando lleguen los datos
+  repintarTimer = setTimeout(()=>{ if(EVENTOS.length) pintar(); }, 150);
 }
 
 /* Normaliza los formatos que usa la DMC a [[lat,lon],…]:
@@ -368,21 +401,21 @@ function clavesGeo(){
     CLAVES_GEO = Object.keys(window).filter(k=>k.indexOf("coordenadas_")===0);
   return CLAVES_GEO;
 }
-function poligonosDeZona(zona){
+function clavesDeZona(zona){
   const z = String(zona||"").trim(); if(!z) return [];
+  if(NOMBRE_REGION[z])                        // región completa → todas sus zonas
+    return clavesGeo().filter(k=>k.indexOf("coordenadas_"+z+"_")===0);
   const out = [];
-  const meter = v=>{ const p = aLatLngs(v); if(p) out.push(p); };
-  if(NOMBRE_REGION[z]){                       // región completa → todas sus zonas
-    clavesGeo().filter(k=>k.indexOf("coordenadas_"+z+"_")===0).forEach(k=>meter(window[k]));
-    return out;
-  }
-  meter(window["coordenadas_"+z]);
+  if(window["coordenadas_"+z]!==undefined) out.push("coordenadas_"+z);
   for(let i=1;i<=80;i++){
-    const v = window["coordenadas_"+z+i];
-    if(v!==undefined) meter(v);
+    const k = "coordenadas_"+z+i;
+    if(window[k]!==undefined) out.push(k);
     else if(i>3 && out.length) break;
   }
   return out;
+}
+function poligonosDeZona(zona){
+  return clavesDeZona(zona).map(k=>aLatLngs(window[k])).filter(Boolean);
 }
 
 function poligonosDeEvento(e){
@@ -405,6 +438,115 @@ function circulosDeEvento(e){
     if(/juan\s*fernandez|robinson\s*crusoe/.test(t)) agregar("jf");
   }
   return out;
+}
+
+const COLOR_NIVEL = {Aviso:"#f2b705", Alerta:"#f2740b", Alarma:"#d81e1e"};
+const RANGO_NIVEL = {Alarma:0, Alerta:1, Aviso:2};
+
+/* ¿el evento afecta a la región r el día d? (usa la calendarización si existe) */
+function activoEnDia(e, d, r){
+  let activos = null;
+  if(e.calendario){
+    if(r && e.calendario.porRegion[r]) activos = e.calendario.porRegion[r];
+    else if(!e.calendario.hayRegiones && e.calendario.global) activos = e.calendario.global;
+  }
+  if(activos) return activos.has(claveDia(d));
+  const d0=new Date(e.desde); d0.setHours(0,0,0,0);
+  const d1=new Date(e.hasta); d1.setHours(23,59,59,999);
+  return d>=d0 && d<=d1;
+}
+
+/* ---------- Mapa nacional (panel lateral) ---------- */
+let mapaChile = null, capaChile = null, diaMapa = null; // diaMapa null = todos los días
+
+function resumenGeografico(visibles){
+  const porClave = {};   // clave geo -> {nivel, evs:[]}
+  const areas = [];      // eventos con polígono propio
+  const circulos = [];   // islas sin polígono
+  visibles.forEach(e=>{
+    const zonas = String(e.dataZonaAfecta||"").split(",").map(z=>z.trim()).filter(Boolean);
+    // filtro por día: se evalúa contra las regiones del evento
+    if(diaMapa && !e.regiones.some(r=>activoEnDia(e, diaMapa, r))) return;
+    if(normalizar(e.tipoZonaAfecta)==="area"){
+      const p = aLatLngs(e.dataZonaAfecta); if(p) areas.push({pts:p, e:e});
+      return;
+    }
+    circulosDeEvento(e).forEach(c=>circulos.push({c:c, e:e}));
+    zonas.forEach(z=>{
+      clavesDeZona(z).forEach(k=>{
+        const reg = porClave[k] || (porClave[k] = {nivel:null, evs:[]});
+        reg.evs.push(e);
+        if(reg.nivel===null || RANGO_NIVEL[e.tipo] < RANGO_NIVEL[reg.nivel]) reg.nivel = e.tipo;
+      });
+    });
+  });
+  return {porClave, areas, circulos};
+}
+
+function tooltipDe(evs){
+  const orden = [...evs].sort((a,b)=>RANGO_NIVEL[a.tipo]-RANGO_NIVEL[b.tipo]);
+  const lineas = orden.slice(0,6).map(e=>
+    '<span style="color:'+COLOR_NIVEL[e.tipo]+'">●</span> <b>'+esc(e.tipo)+'</b> · '+esc(e.fenomeno));
+  if(orden.length>6) lineas.push("… y "+(orden.length-6)+" más");
+  return lineas.join("<br>");
+}
+
+function pintarMapaChile(visibles){
+  const cont = document.getElementById("mapaChile");
+  if(!cont || typeof L === "undefined") return;
+  if(!mapaChile){
+    mapaChile = L.map(cont, {scrollWheelZoom:false, zoomControl:true});
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      {maxZoom:12, attribution:"© OpenStreetMap"}).addTo(mapaChile);
+    mapaChile.fitBounds([[-56.0,-76.5],[-17.4,-66.0]]);
+  }
+  if(capaChile){ capaChile.remove(); capaChile = null; }
+
+  const {porClave, areas, circulos} = resumenGeografico(visibles);
+  const formas = [];
+  Object.keys(porClave).forEach(k=>{
+    const info = porClave[k];
+    const pts = aLatLngs(window[k]); if(!pts) return;
+    const col = COLOR_NIVEL[info.nivel] || "#12314f";
+    formas.push(L.polygon(pts, {color:col, weight:.8, fillColor:col, fillOpacity:.55})
+      .bindTooltip(tooltipDe(info.evs), {sticky:true}));
+  });
+  areas.forEach(a=>{
+    const col = COLOR_NIVEL[a.e.tipo] || "#12314f";
+    formas.push(L.polygon(a.pts, {color:col, weight:1.2, fillColor:col, fillOpacity:.55})
+      .bindTooltip(tooltipDe([a.e]), {sticky:true}));
+  });
+  circulos.forEach(o=>{
+    const col = COLOR_NIVEL[o.e.tipo] || "#12314f";
+    formas.push(L.circle(o.c.c, {radius:o.c.r, color:col, weight:2, fillColor:col, fillOpacity:.6})
+      .bindTooltip(o.c.n+"<br>"+tooltipDe([o.e])));
+  });
+
+  capaChile = L.featureGroup(formas).addTo(mapaChile);
+  const pie = document.getElementById("mapaPie");
+  if(pie) pie.innerHTML = formas.length
+    ? "<b>"+formas.length+"</b> zonas marcadas"+(diaMapa
+        ? " el "+DIAS_SEM[diaMapa.getDay()].toLowerCase()+" "+diaMapa.getDate()+" "+MESES_CORTO[diaMapa.getMonth()]
+        : " en todo el período")+". Pasa el cursor para ver el detalle."
+    : "Sin zonas afectadas con los filtros actuales.";
+  setTimeout(()=>mapaChile && mapaChile.invalidateSize(), 60);
+}
+
+function pintarSelectorDias(dias){
+  const cont = document.getElementById("diasMapa");
+  if(!cont) return;
+  cont.innerHTML = "";
+  const mk = (txt, valor)=>{
+    const b = document.createElement("span");
+    const activo = valor===null ? diaMapa===null
+                 : (diaMapa && claveDia(diaMapa)===claveDia(valor));
+    b.className = "dchip"+(activo?" on":"");
+    b.textContent = txt;
+    b.onclick = ()=>{ diaMapa = valor; pintar(); };
+    cont.appendChild(b);
+  };
+  mk("Todos", null);
+  dias.forEach((d,i)=> mk(i===0 ? "Hoy" : DIAS_SEM[d.getDay()]+" "+d.getDate(), d));
 }
 
 let mapaEv = null;
@@ -533,6 +675,8 @@ function pintar(){
 
   if(EVENTOS.length===0){
     cont.innerHTML = '<div class="aviso-msg">✅ La DMC no informa avisos, alertas ni alarmas meteorológicas vigentes en este momento.</div>';
+    pintarSelectorDias([]);
+    pintarMapaChile([]);
     return;
   }
 
@@ -549,21 +693,8 @@ function pintar(){
   const celdas = {}; // codigoRegion|claveDia -> [eventos]
   visibles.forEach(e=>{
     e.regiones.forEach(r=>{
-      // días activos para ESTA región según la calendarización del evento;
-      // si la tabla no informa esta región, se usa el rango completo de vigencia
-      let activos = null;
-      if(e.calendario){
-        if(e.calendario.porRegion[r]) activos = e.calendario.porRegion[r];
-        else if(!e.calendario.hayRegiones && e.calendario.global) activos = e.calendario.global;
-      }
       dias.forEach(d=>{
-        const d0=new Date(e.desde); d0.setHours(0,0,0,0);
-        const d1=new Date(e.hasta); d1.setHours(23,59,59,999);
-        const dentro = activos ? activos.has(claveDia(d)) : (d>=d0 && d<=d1);
-        if(dentro){
-          const k=r+"|"+claveDia(d);
-          (celdas[k]=celdas[k]||[]).push(e);
-        }
+        if(activoEnDia(e, d, r)) (celdas[r+"|"+claveDia(d)] = celdas[r+"|"+claveDia(d)]||[]).push(e);
       });
     });
   });
@@ -600,6 +731,11 @@ function pintar(){
   });
   html += "</tbody></table></div>";
   cont.innerHTML = html;
+
+  // panel lateral: selector de día + mapa nacional
+  if(diaMapa && !dias.some(d=>claveDia(d)===claveDia(diaMapa))) diaMapa = null;
+  pintarSelectorDias(dias);
+  pintarMapaChile(visibles);
 }
 
 /* ---------- Modal de detalle ---------- */
