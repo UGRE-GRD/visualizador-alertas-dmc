@@ -472,6 +472,8 @@ function procesar(){
       desdeTxt: decodificar(ev.desde||""), hastaTxt: decodificar(ev.hasta||""),
       desde: d.fecha, hasta: h.fecha,
       zonaTexto: decodificar(String(ev.textoZonaAfecta||"").replace(/<br\s*\/?>/gi," / ")),
+      tipoZonaAfecta: ev.tipoZonaAfecta || "",
+      dataZonaAfecta: ev.dataZonaAfecta || "",
       tablaTitulo: decodificar(ev.tablaTitulo||""),
       tablaHTML: ev.tablaHTML || "",
       regiones: regionesDeEvento(ev)
