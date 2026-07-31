@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Visualizador de Alertamientos DMC</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   :root{
     --aviso:#f2b705; --aviso-bg:#fdf3d0;
@@ -34,14 +36,14 @@
   .estado{padding:8px 20px;font-size:12px;color:var(--muted)}
   .estado b{color:var(--ink)}
   .tabla-wrap{overflow:auto;margin:0 20px 30px;background:var(--card);border:1px solid var(--line);border-radius:10px;max-height:calc(100vh - 210px)}
-  table.matriz{border-collapse:separate;border-spacing:0;width:100%;min-width:760px}
+  table.matriz{border-collapse:separate;border-spacing:0;width:100%;min-width:900px;table-layout:fixed}
   .matriz th,.matriz td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:6px 8px;vertical-align:top}
   .matriz thead th{position:sticky;top:0;background:#eef2f6;z-index:20;text-align:center;font-size:12.5px;padding:8px 6px}
   .matriz thead th.hoy{background:#d5e6fa}
   .matriz thead th .dnum{display:block;font-size:16px}
-  .matriz td.region, .matriz thead th.region{position:sticky;left:0;background:#eef2f6;z-index:10;text-align:left;font-weight:600;font-size:13px;min-width:150px;white-space:nowrap}
+  .matriz td.region, .matriz thead th.region{position:sticky;left:0;background:#eef2f6;z-index:10;text-align:left;font-weight:600;font-size:13px;white-space:normal;overflow-wrap:break-word}
   .matriz thead th.region{z-index:40}
-  .matriz td{background:#fff;min-width:120px;height:38px}
+  .matriz td{background:#fff;height:38px;overflow:hidden}
   .matriz td.hoy{background:var(--hoy)}
   .matriz tr.sin-eventos td{color:#c6ced6}
   .badge{display:flex;align-items:center;gap:5px;border-radius:6px;padding:3px 7px;margin:2px 0;font-size:12px;font-weight:600;cursor:pointer;border-left:4px solid;line-height:1.25}
@@ -69,6 +71,9 @@
   .tabla-int table{border-collapse:collapse;font-size:12.5px;width:100%}
   .tabla-int th,.tabla-int td{border:1px solid var(--line);padding:4px 8px;text-align:center}
   .tabla-int th{background:#eef2f6}
+  #mapaEvento{height:340px;border-radius:8px;border:1px solid var(--line);margin-top:6px;background:#eef2f6}
+  .mapa-nota{font-size:11.5px;color:var(--muted);margin:5px 0 0}
+  .leaflet-container{font:inherit}
   @media (max-width:700px){ .modal .meta{grid-template-columns:1fr} }
 </style>
 </head>
@@ -198,6 +203,15 @@ const ZONAS_INSULARES = [
   [/juan\s*fernandez|robinson\s*crusoe|masatierra|mas\s*a\s*tierra/, "05"],
   [/isla\s*de\s*pascua|rapa\s*nui/, "05"]
 ];
+// códigos cortos que la DMC usa como "región" para los territorios insulares
+const ALIAS_REGION = { "ip":"05", "jf":"05", "aji":"05", "ipa":"05" };
+// coordenadas para ubicarlas en el mapa (no tienen polígono publicado)
+const PUNTOS_INSULARES = {
+  "ip":  {c:[-27.1127,-109.3497], r:12000, n:"Isla de Pascua"},
+  "ipa": {c:[-27.1127,-109.3497], r:12000, n:"Isla de Pascua"},
+  "jf":  {c:[-33.6367,-78.8300],  r:9000,  n:"Archipiélago Juan Fernández"},
+  "aji": {c:[-33.6367,-78.8300],  r:9000,  n:"Archipiélago Juan Fernández"}
+};
 
 /* Resuelve el código de región a partir de un código de zona de la DMC.
    Devuelve [] si no se puede determinar. */
@@ -206,6 +220,7 @@ function regionDeZona(z){
   if(!bruto) return [];
   const pref = bruto.split("_")[0];
   if(NOMBRE_REGION[pref]) return [pref];                 // 05, 05m, 08a, 11, …
+  if(ALIAS_REGION[pref.toLowerCase()]) return [ALIAS_REGION[pref.toLowerCase()]];  // ip, jf
   const texto = normalizar(bruto.replace(/_/g," "));
   for(const [re,cod] of ZONAS_INSULARES){ if(re.test(texto)) return [cod]; }
   // sufijos desconocidos (p. ej. 05i, 05jf) → se atribuyen a su región numérica
@@ -302,6 +317,124 @@ function iconoDe(fen){
   const n = normalizar(fen);
   for(const [re,ic] of ICONOS){ if(re.test(n)) return ic; }
   return "⚠️";
+}
+
+/* ---------- Geometrías oficiales de la DMC (para el mapa) ---------- */
+const BASE_DMC = "https://archivos.meteochile.gob.cl/portaldmc/AAA/";
+const ARCHIVOS_GEO = [
+  "sistemaAAA_coordenadas_zonas_2026.js",
+  "sistemaAAA_coordenadas_regiones_2024.js",
+  "sistemaAAA_coordenadas_zonas_2024_region_11_antigua.js"
+];
+let geoListo = false;
+function cargarGeometrias(){
+  ARCHIVOS_GEO.forEach(f=>{
+    const sc = document.createElement("script");
+    sc.src = BASE_DMC + f;
+    sc.onload = ()=>{ geoListo = true; };
+    sc.onerror = ()=>{};
+    document.head.appendChild(sc);
+  });
+}
+
+/* Normaliza los formatos que usa la DMC a [[lat,lon],…]:
+   arreglo de {lat,lng} (zonas), arreglo de pares, o "lat,lon|lat,lon" (áreas). */
+function aLatLngs(valor){
+  if(!valor) return null;
+  if(Array.isArray(valor)){
+    const pts = valor.map(p=>{
+      if(Array.isArray(p)) return [ +p[0], +p[1] ];
+      if(p && typeof p === "object"){
+        const la = p.lat ?? p.latitud ?? p.y, lo = p.lng ?? p.lon ?? p.longitud ?? p.x;
+        return [ +la, +lo ];
+      }
+      return String(p).split(",").map(Number).slice(0,2);
+    }).filter(p=>p.length===2 && isFinite(p[0]) && isFinite(p[1]));
+    return pts.length>2 ? pts : null;
+  }
+  const pts = String(valor).split("|").map(par=>{
+    const n = par.split(",").map(x=>parseFloat(x));
+    return (n.length>=2 && isFinite(n[0]) && isFinite(n[1])) ? [n[0], n[1]] : null;
+  }).filter(Boolean);
+  return pts.length>2 ? pts : null;
+}
+
+/* La DMC publica una variable coordenadas_<zona> por zona simple y
+   coordenadas_<zona>1..N cuando la zona tiene varios polígonos (islas, fiordos).
+   Las regiones no tienen geometría propia: se unen todas sus zonas. */
+let CLAVES_GEO = null;
+function clavesGeo(){
+  if(!CLAVES_GEO || !CLAVES_GEO.length)
+    CLAVES_GEO = Object.keys(window).filter(k=>k.indexOf("coordenadas_")===0);
+  return CLAVES_GEO;
+}
+function poligonosDeZona(zona){
+  const z = String(zona||"").trim(); if(!z) return [];
+  const out = [];
+  const meter = v=>{ const p = aLatLngs(v); if(p) out.push(p); };
+  if(NOMBRE_REGION[z]){                       // región completa → todas sus zonas
+    clavesGeo().filter(k=>k.indexOf("coordenadas_"+z+"_")===0).forEach(k=>meter(window[k]));
+    return out;
+  }
+  meter(window["coordenadas_"+z]);
+  for(let i=1;i<=80;i++){
+    const v = window["coordenadas_"+z+i];
+    if(v!==undefined) meter(v);
+    else if(i>3 && out.length) break;
+  }
+  return out;
+}
+
+function poligonosDeEvento(e){
+  const tz = normalizar(e.tipoZonaAfecta);
+  if(tz==="area"){ const p = aLatLngs(e.dataZonaAfecta); return p?[p]:[]; }
+  if(!e.dataZonaAfecta) return [];
+  const out = [];
+  e.dataZonaAfecta.split(",").forEach(z=>{ poligonosDeZona(z.trim()).forEach(p=>out.push(p)); });
+  return out;
+}
+
+/* Islas sin polígono publicado (Isla de Pascua, Juan Fernández) → círculo */
+function circulosDeEvento(e){
+  const out = [];
+  const agregar = k=>{ const p = PUNTOS_INSULARES[k]; if(p && !out.some(x=>x.n===p.n)) out.push(p); };
+  String(e.dataZonaAfecta||"").split(",").forEach(z=>agregar(z.trim().toLowerCase()));
+  if(!out.length){
+    const t = normalizar((e.titulo||"")+" "+(e.zonaTexto||""));
+    if(/isla\s*de\s*pascua|rapa\s*nui/.test(t)) agregar("ip");
+    if(/juan\s*fernandez|robinson\s*crusoe/.test(t)) agregar("jf");
+  }
+  return out;
+}
+
+let mapaEv = null;
+function dibujarMapa(e){
+  const cont = document.getElementById("mapaEvento");
+  if(!cont || typeof L === "undefined") return;
+  const poligonos = poligonosDeEvento(e);
+  const circulos  = circulosDeEvento(e);
+  if(!poligonos.length && !circulos.length){
+    cont.style.display = "none";
+    const nota = document.getElementById("mapaNota");
+    if(nota) nota.textContent = geoListo
+      ? "No hay geometría disponible para las zonas de este alertamiento."
+      : "No se pudieron cargar las geometrías de la DMC (revisa tu conexión).";
+    return;
+  }
+  cont.style.display = "";
+  if(mapaEv){ mapaEv.remove(); mapaEv = null; }
+  mapaEv = L.map(cont, {scrollWheelZoom:false});
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {maxZoom:12, attribution:"© OpenStreetMap"}).addTo(mapaEv);
+  const color = {Aviso:"#f2b705", Alerta:"#f2740b", Alarma:"#d81e1e"}[e.tipo] || "#12314f";
+  const formas = poligonos.map(p=>L.polygon(p, {color, weight:1.5, fillColor:color, fillOpacity:.4}));
+  circulos.forEach(c=>formas.push(
+    L.circle(c.c, {radius:c.r, color, weight:2, fillColor:color, fillOpacity:.45}).bindTooltip(c.n)
+  ));
+  const capa = L.featureGroup(formas).addTo(mapaEv);
+  try{ mapaEv.fitBounds(capa.getBounds(), {padding:[16,16]}); }
+  catch(_){ mapaEv.setView([-35,-71], 4); }
+  setTimeout(()=>mapaEv && mapaEv.invalidateSize(), 60);
 }
 
 /* ---------- Carga de datos ---------- */
@@ -433,7 +566,10 @@ function pintar(){
     });
   });
 
-  let html = '<div class="tabla-wrap"><table class="matriz"><thead><tr><th class="region">Región</th>';
+  // colgroup: región con ancho fijo; los días reparten el resto en partes iguales
+  let html = '<div class="tabla-wrap"><table class="matriz"><colgroup><col style="width:170px">'
+           + dias.map(()=>'<col>').join("")
+           + '</colgroup><thead><tr><th class="region">Región</th>';
   dias.forEach((d,i)=>{
     html += '<th class="'+(i===0?"hoy":"")+'">'+DIAS_SEM[d.getDay()]+(i===0?" · HOY":"")+
             '<span class="dnum">'+d.getDate()+" "+MESES_CORTO[d.getMonth()]+"</span></th>";
@@ -482,17 +618,24 @@ function abrirModal(idx){
     (e.condicion ? "<dt>Condición sinóptica</dt><dd>"+esc(e.condicion)+"</dd>" : "")+
     (e.observacion ? "<dt>Observación</dt><dd>"+esc(e.observacion)+"</dd>" : "")+
     "</dl>";
+  html += '<h3>Zonas de afectación</h3><div id="mapaEvento"></div>'+
+          '<p class="mapa-nota" id="mapaNota">Áreas marcadas según la delimitación oficial de la DMC.</p>';
   if(e.tablaHTML && e.tablaHTML.length>50){
     html += "<h3>"+esc(e.tablaTitulo||"Detalle por zona y día")+'</h3><div class="tabla-int">'+e.tablaHTML+"</div>";
   }
   html += '<p><a href="'+enlace+'" target="_blank">Ver ficha oficial del evento en la DMC ↗</a></p>';
   document.getElementById("modal").innerHTML = html;
   document.getElementById("overlay").classList.add("abierto");
+  dibujarMapa(e);
 }
-function cerrarModal(){ document.getElementById("overlay").classList.remove("abierto"); }
+function cerrarModal(){
+  document.getElementById("overlay").classList.remove("abierto");
+  if(mapaEv){ mapaEv.remove(); mapaEv = null; }
+}
 document.addEventListener("keydown",ev=>{ if(ev.key==="Escape") cerrarModal(); });
 
 /* ---------- Inicio + auto-actualización cada 15 min ---------- */
+cargarGeometrias();
 cargarDatos();
 setInterval(cargarDatos, 15*60*1000);
 </script>
