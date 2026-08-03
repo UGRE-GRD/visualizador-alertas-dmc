@@ -19,9 +19,6 @@
   header{background:#12314f;color:#fff;padding:14px 20px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
   header h1{font-size:18px;margin:0;font-weight:700}
   header .sub{font-size:12px;opacity:.85}
-  .resumen{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .cnt{border-radius:14px;padding:3px 12px;font-weight:700;font-size:13px;color:#1c2733}
-  .cnt.aviso{background:var(--aviso)} .cnt.alerta{background:var(--alerta);color:#fff} .cnt.alarma{background:var(--alarma);color:#fff}
   button.recargar{background:#fff;color:#12314f;border:none;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;font-size:13px}
   button.recargar:hover{background:#dce9f7}
   .barra{display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding:10px 20px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:30}
@@ -35,20 +32,40 @@
   .chip.on.fen{background:#e8f1fb;border-color:#12314f}
   .estado{padding:8px 20px;font-size:12px;color:var(--muted)}
   .estado b{color:var(--ink)}
+  /* Tablero: mapa (izquierda) | calendario (centro) | listado de alertas (derecha).
+     El orden visual se controla con `order`; el DOM mantiene primero el
+     calendario por ser el contenido principal (mejor para lectores de pantalla). */
   .tablero{display:flex;gap:14px;align-items:flex-start;padding:0 20px 24px}
-  .col-tabla{flex:1 1 auto;min-width:0}
-  .col-mapa{flex:0 0 340px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;position:sticky;top:62px}
-  .mapa-cab{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:space-between;margin-bottom:8px}
-  .mapa-cab b{font-size:13px}
+  .col-tabla{flex:1 1 auto;min-width:0;order:2}
+  .col-mapa,.col-lista{flex:0 0 300px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;position:sticky;top:62px;display:flex;flex-direction:column;min-width:0}
+  .col-mapa{order:1}
+  .col-lista{order:3}
+  .mapa-cab, .lista-cab{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .mapa-cab b, .lista-cab b{font-size:13px}
+  .lista-cab .lista-cnt{font-size:11px;color:var(--muted);font-weight:600}
   .dias-mapa{display:flex;flex-wrap:wrap;gap:4px}
   .dchip{border:1px solid var(--line);background:#fff;border-radius:12px;padding:2px 8px;font-size:11px;cursor:pointer;color:var(--muted);user-select:none;white-space:nowrap}
   .dchip.on{background:#12314f;border-color:#12314f;color:#fff;font-weight:700}
-  #mapaChile{height:calc(100vh - 250px);min-height:430px;border-radius:8px;background:#eef2f6}
+  #mapaChile{height:calc(100vh - 250px);min-height:380px;border-radius:8px;background:#eef2f6}
   .mapa-pie{font-size:11px;color:var(--muted);margin:6px 0 0}
-  @media (max-width:1100px){
+  .lista-scroll{overflow:auto;max-height:calc(100vh - 250px);min-height:200px;display:flex;flex-direction:column;gap:6px}
+  .item-alerta{border:1px solid var(--line);border-left:4px solid #9aa7b3;border-radius:8px;padding:7px 9px;cursor:pointer;background:#fff;text-align:left}
+  .item-alerta:hover{background:#f7f9fb}
+  .item-alerta.Aviso{border-left-color:var(--aviso)}
+  .item-alerta.Alerta{border-left-color:var(--alerta)}
+  .item-alerta.Alarma{border-left-color:var(--alarma)}
+  .item-alerta .fila1{display:flex;justify-content:space-between;gap:6px;font-size:11px;color:var(--muted)}
+  .item-alerta .cod{font-weight:700;color:var(--ink)}
+  .item-alerta .tit{font-size:12.5px;margin-top:3px;line-height:1.3;color:var(--ink)}
+  .item-alerta .upd{display:inline-block;margin-top:4px;font-size:10.5px;background:#eef2f6;color:var(--muted);border-radius:8px;padding:1px 7px;font-weight:600}
+  @media (max-width:1150px){
     .tablero{flex-direction:column}
-    .col-mapa{position:static;flex:1 1 auto;width:100%}
-    #mapaChile{height:440px}
+    .col-tabla{order:1}
+    .col-mapa{order:2}
+    .col-lista{order:3}
+    .col-mapa,.col-lista{position:static;flex:1 1 auto;width:100%}
+    #mapaChile{height:380px}
+    .lista-scroll{max-height:420px}
   }
   .tabla-wrap{overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:10px;max-height:calc(100vh - 210px)}
   table.matriz{border-collapse:separate;border-spacing:0;width:100%;min-width:900px;table-layout:fixed}
@@ -89,6 +106,10 @@
   #mapaEvento{height:340px;border-radius:8px;border:1px solid var(--line);margin-top:6px;background:#eef2f6}
   .mapa-nota{font-size:11.5px;color:var(--muted);margin:5px 0 0}
   .leaflet-container{font:inherit}
+  .actualizacion-nota{background:#fff6e0;border:1px solid #f0d896;border-radius:8px;padding:8px 10px;font-size:12.5px;margin:10px 0;color:#6b5300}
+  .rel-item{display:block;width:100%;text-align:left;border:1px solid var(--line);border-radius:7px;padding:6px 9px;margin:5px 0;background:#fff;cursor:pointer;font-size:12.5px}
+  .rel-item:hover{background:#f7f9fb}
+  .rel-item .cod{font-weight:700;margin-right:6px}
   @media (max-width:700px){ .modal .meta{grid-template-columns:1fr} }
 </style>
 </head>
@@ -98,7 +119,6 @@
     <h1>⛈️ Alertamientos Meteorológicos — DMC</h1>
     <div class="sub">Avisos, Alertas y Alarmas vigentes · Dirección Meteorológica de Chile</div>
   </div>
-  <div class="resumen" id="resumen"></div>
   <button class="recargar" onclick="cargarDatos()">⟳ Actualizar</button>
 </header>
 
@@ -118,6 +138,13 @@
     </div>
     <div id="mapaChile"></div>
     <p class="mapa-pie" id="mapaPie">Zonas coloreadas según el nivel más alto vigente.</p>
+  </aside>
+  <aside class="col-lista">
+    <div class="lista-cab">
+      <b>📋 Listado de alertas</b>
+      <span class="lista-cnt" id="listaCount"></span>
+    </div>
+    <div class="lista-scroll" id="listaAlertas"></div>
   </aside>
 </div>
 
@@ -222,6 +249,29 @@ function parseFecha(texto){
   return {fecha:f, periodo:PER};
 }
 function claveDia(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+
+/* Fecha y hora exactas de "emision" (ej: "Lunes 3 de agosto del 2026 a las 13:22 hrs.")
+   — se usa para ordenar el listado por fecha de incorporación. */
+function parseEmision(texto){
+  const s = normalizar(texto);
+  const m = s.match(/(\d{1,2})\s+de\s+([a-z]+)(?:\s+de[l]?\s+(\d{4}))?[\s\S]*?(\d{1,2}):(\d{2})/);
+  if(!m || !(m[2] in MESES)) return null;
+  const anio = m[3] ? +m[3] : new Date().getFullYear();
+  return new Date(anio, MESES[m[2]], +m[1], +m[4], +m[5]);
+}
+
+/* La DMC codifica cada alertamiento como [PREFIJO][NÚMERO](-[ACTUALIZACIÓN])?/[AÑO].
+   El número identifica al evento; el sufijo "-N", cuando existe, indica que es
+   la actualización N° N de ese mismo alertamiento (sin sufijo = emisión original). */
+function parseCodigoEvento(cod){
+  const c = String(cod||"").trim();
+  const m = c.match(/^([A-Za-z]+)(\d+)(?:-(\d+))?\/(\d{4})$/);
+  if(!m) return {prefijo:"", numero:"", actualizacion:0, anio:"", familia:c, esBase:true};
+  return {
+    prefijo: m[1], numero: m[2], actualizacion: m[3]?+m[3]:0, anio: m[4],
+    familia: m[1]+m[2]+"/"+m[4], esBase: true
+  };
+}
 
 /* Territorios insulares que administrativamente pertenecen a una región:
    Juan Fernández e Isla de Pascua (Rapa Nui) son parte de Valparaíso. */
@@ -623,6 +673,11 @@ function procesar(){
   });
   // calendarización: días con afectación real según la tabla del evento
   EVENTOS.forEach(e=>{ try{ e.calendario = calendarioDesdeTabla(e); }catch(_){ e.calendario = null; } });
+  // fecha/hora de incorporación (para ordenar el listado) y datos de versión/actualización
+  EVENTOS.forEach(e=>{
+    e.emisionFecha = parseEmision(e.emision) || e.desde;
+    e.verInfo = parseCodigoEvento(e.codigo);
+  });
 
   fenomenosConocidos = [...new Set(EVENTOS.map(e=>e.fenomeno))].sort();
   if(fenomenosActivos.size===0 || [...fenomenosActivos].some(f=>!fenomenosConocidos.includes(f)))
@@ -659,13 +714,6 @@ function pintarFiltros(){
 function pintar(){
   const cont = document.getElementById("contenido");
   const visibles = EVENTOS.filter(e=>nivelesActivos.has(e.tipo) && fenomenosActivos.has(e.fenomeno));
-
-  // resumen
-  const res = document.getElementById("resumen");
-  res.innerHTML = ["Aviso","Alerta","Alarma"].map(niv=>{
-    const n = EVENTOS.filter(e=>e.tipo===niv).length;
-    return '<span class="cnt '+niv.toLowerCase()+'">'+n+" "+niv+(n===1?"":"s")+"</span>";
-  }).join("");
 
   const ahora = new Date();
   document.getElementById("estado").innerHTML =
@@ -732,10 +780,66 @@ function pintar(){
   html += "</tbody></table></div>";
   cont.innerHTML = html;
 
-  // panel lateral: selector de día + mapa nacional
+  // panel lateral: selector de día + mapa nacional + listado
   if(diaMapa && !dias.some(d=>claveDia(d)===claveDia(diaMapa))) diaMapa = null;
   pintarSelectorDias(dias);
   pintarMapaChile(visibles);
+  pintarListaAlertas(visibles);
+}
+
+/* ---------- Listado lateral de alertas ---------- */
+function pintarListaAlertas(visibles){
+  const cont = document.getElementById("listaAlertas");
+  const cnt  = document.getElementById("listaCount");
+  if(!cont) return;
+  if(cnt) cnt.textContent = visibles.length+" de "+EVENTOS.length;
+  if(!visibles.length){
+    cont.innerHTML = '<p class="mapa-pie">No hay alertas que coincidan con los filtros.</p>';
+    return;
+  }
+  // más reciente primero, según fecha/hora de emisión (incorporación)
+  const orden = [...visibles].sort((a,b)=> b.emisionFecha - a.emisionFecha);
+  cont.innerHTML = orden.map(e=>{
+    const fecha = e.emisionFecha;
+    const fechaTxt = fecha
+      ? DIAS_SEM[fecha.getDay()]+" "+fecha.getDate()+" "+MESES_CORTO[fecha.getMonth()]+" · "
+        +String(fecha.getHours()).padStart(2,"0")+":"+String(fecha.getMinutes()).padStart(2,"0")
+      : "";
+    const upd = e.verInfo && e.verInfo.actualizacion>0
+      ? '<span class="upd">Actualización N° '+e.verInfo.actualizacion+'</span>' : "";
+    return '<button class="item-alerta '+esc(e.tipo)+'" onclick="abrirModal('+e.idx+')">'
+      + '<div class="fila1"><span class="cod">'+esc(e.codigo)+'</span><span>'+esc(fechaTxt)+'</span></div>'
+      + '<div class="tit">'+iconoDe(e.fenomeno)+' '+esc(e.titulo||e.fenomeno)+'</div>'
+      + upd
+      + '</button>';
+  }).join("");
+}
+
+/* Nota de actualización: indica si el código es una revisión de un alertamiento
+   anterior (sufijo "-N" en el código) y muestra otros registros vigentes que
+   comparten el mismo código base, si los hay. La DMC no expone el contenido de
+   versiones ya reemplazadas, así que esas no pueden mostrarse en el detalle;
+   se deja el enlace a la ficha oficial para revisarlas ahí. */
+function notaActualizacion(e){
+  const v = e.verInfo;
+  if(!v || !v.familia) return "";
+  const hermanos = EVENTOS.filter(x=>x.idx!==e.idx && x.verInfo && x.verInfo.familia===v.familia);
+  let html = "";
+  if(v.actualizacion>0){
+    html += '<div class="actualizacion-nota">🔄 Esta es la <b>actualización N° '+v.actualizacion
+      +'</b> del alertamiento <b>'+esc(v.prefijo+v.numero+"/"+v.anio)+'</b>. '
+      +'Las versiones anteriores ya no están vigentes: fueron reemplazadas por esta.</div>';
+  }
+  if(hermanos.length){
+    html += '<h3>Otros registros vigentes de este mismo alertamiento</h3>';
+    hermanos.sort((a,b)=>(a.verInfo.actualizacion||0)-(b.verInfo.actualizacion||0)).forEach(h=>{
+      const etiqueta = h.verInfo.actualizacion>0 ? "Actualización N° "+h.verInfo.actualizacion : "Emisión original";
+      html += '<button class="rel-item" onclick="abrirModal('+h.idx+')">'
+        +'<span class="cod">'+esc(h.codigo)+'</span> · '+esc(etiqueta)+' — '+esc(h.titulo||h.fenomeno)
+        +'</button>';
+    });
+  }
+  return html;
 }
 
 /* ---------- Modal de detalle ---------- */
@@ -756,6 +860,7 @@ function abrirModal(idx){
     (e.condicion ? "<dt>Condición sinóptica</dt><dd>"+esc(e.condicion)+"</dd>" : "")+
     (e.observacion ? "<dt>Observación</dt><dd>"+esc(e.observacion)+"</dd>" : "")+
     "</dl>";
+  html += notaActualizacion(e);
   html += '<h3>Zonas de afectación</h3><div id="mapaEvento"></div>'+
           '<p class="mapa-nota" id="mapaNota">Áreas marcadas según la delimitación oficial de la DMC.</p>';
   if(e.tablaHTML && e.tablaHTML.length>50){
