@@ -506,6 +506,18 @@ function activoEnDia(e, d, r){
   return d>=d0 && d<=d1;
 }
 
+/* niveles y fenómenos presentes en un día concreto (para autoseleccionar filtros) */
+function nivelesYFenomenosEnDia(dia){
+  const niveles = new Set(), fenomenos = new Set();
+  EVENTOS.forEach(e=>{
+    if(e.regiones.some(r=>activoEnDia(e, dia, r))){
+      niveles.add(e.tipo);
+      fenomenos.add(e.fenomeno);
+    }
+  });
+  return {niveles, fenomenos};
+}
+
 /* ---------- Mapa nacional (panel lateral) ---------- */
 let mapaChile = null, capaChile = null, diaMapa = null; // diaMapa null = todos los días
 
@@ -592,7 +604,21 @@ function pintarSelectorDias(dias){
                  : (diaMapa && claveDia(diaMapa)===claveDia(valor));
     b.className = "dchip"+(activo?" on":"");
     b.textContent = txt;
-    b.onclick = ()=>{ diaMapa = valor; pintar(); };
+    b.onclick = ()=>{
+      diaMapa = valor;
+      // Link de filtros: elegir un día autoselecciona los niveles y fenómenos
+      // que corresponden a ese día ("Todos" restablece los filtros completos).
+      if(valor===null){
+        nivelesActivos = new Set(["Aviso","Alerta","Alarma"]);
+        fenomenosActivos = new Set(fenomenosConocidos);
+      }else{
+        const {niveles, fenomenos} = nivelesYFenomenosEnDia(valor);
+        nivelesActivos = niveles.size ? niveles : new Set(["Aviso","Alerta","Alarma"]);
+        fenomenosActivos = fenomenos.size ? fenomenos : new Set(fenomenosConocidos);
+      }
+      pintarFiltros();
+      pintar();
+    };
     cont.appendChild(b);
   };
   mk("Todos", null);
@@ -781,7 +807,10 @@ function pintar(){
   cont.innerHTML = html;
 
   // panel lateral: selector de día + mapa nacional + listado
+  // Link de filtros: si el día elegido queda fuera de rango o sin alertamientos
+  // visibles con los niveles/fenómenos activos, se restablece a "Todos".
   if(diaMapa && !dias.some(d=>claveDia(d)===claveDia(diaMapa))) diaMapa = null;
+  if(diaMapa && !visibles.some(e=>e.regiones.some(r=>activoEnDia(e, diaMapa, r)))) diaMapa = null;
   pintarSelectorDias(dias);
   pintarMapaChile(visibles);
   pintarListaAlertas(visibles);
