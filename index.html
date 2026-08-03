@@ -35,11 +35,16 @@
   /* Tablero: mapa (izquierda) | calendario (centro) | listado de alertas (derecha).
      El orden visual se controla con `order`; el DOM mantiene primero el
      calendario por ser el contenido principal (mejor para lectores de pantalla). */
-  .tablero{display:flex;gap:14px;align-items:flex-start;padding:0 20px 24px}
-  .col-tabla{flex:1 1 auto;min-width:0;order:2}
-  .col-mapa,.col-lista{flex:0 0 300px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;position:sticky;top:62px;display:flex;flex-direction:column;min-width:0}
+  .tablero{display:flex;gap:0;align-items:flex-start;padding:0 20px 24px}
+  .col-tabla{flex:1 1 auto;min-width:0;order:3}
+  .col-mapa,.col-lista{flex:0 0 300px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;position:sticky;top:62px;display:flex;flex-direction:column;min-width:0;max-width:70vw}
   .col-mapa{order:1}
-  .col-lista{order:3}
+  .col-lista{order:5}
+  .resizer{flex:0 0 14px;align-self:stretch;cursor:col-resize;position:relative;touch-action:none}
+  .resizer::after{content:"";position:absolute;top:8px;bottom:8px;left:6px;width:3px;border-radius:3px;background:var(--line);transition:background .15s}
+  .resizer:hover::after,.resizer.arrastrando::after{background:#9aa7b3}
+  #resizerMapa{order:2}
+  #resizerLista{order:4}
   .mapa-cab, .lista-cab{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:space-between;margin-bottom:8px}
   .mapa-cab b, .lista-cab b{font-size:13px}
   .lista-cab .lista-cnt{font-size:11px;color:var(--muted);font-weight:600}
@@ -63,7 +68,8 @@
     .col-tabla{order:1}
     .col-mapa{order:2}
     .col-lista{order:3}
-    .col-mapa,.col-lista{position:static;flex:1 1 auto;width:100%}
+    .col-mapa,.col-lista{position:static;flex:1 1 auto;width:100%;max-width:none}
+    .resizer{display:none}
     #mapaChile{height:380px}
     .lista-scroll{max-height:420px}
   }
@@ -139,6 +145,8 @@
     <div id="mapaChile"></div>
     <p class="mapa-pie" id="mapaPie">Zonas coloreadas según el nivel más alto vigente.</p>
   </aside>
+  <div class="resizer" id="resizerMapa" title="Arrastra para ajustar el ancho"></div>
+  <div class="resizer" id="resizerLista" title="Arrastra para ajustar el ancho"></div>
   <aside class="col-lista">
     <div class="lista-cab">
       <b>📋 Listado de alertas</b>
@@ -906,9 +914,71 @@ function cerrarModal(){
 }
 document.addEventListener("keydown",ev=>{ if(ev.key==="Escape") cerrarModal(); });
 
+/* ---------- Columnas redimensionables (mapa | calendario | listado) ---------- */
+function initColumnasAjustables(){
+  const colMapa  = document.querySelector(".col-mapa");
+  const colLista = document.querySelector(".col-lista");
+  const rMapa  = document.getElementById("resizerMapa");
+  const rLista = document.getElementById("resizerLista");
+  if(!colMapa || !colLista || !rMapa || !rLista) return;
+  const CLAVE = "dmc_anchoColumnas";
+  const MIN = 200, MAX = 560;
+
+  function aplicarGuardado(){
+    let datos = {};
+    try{ datos = JSON.parse(localStorage.getItem(CLAVE) || "{}"); }catch(_){ datos = {}; }
+    if(datos.mapa)  colMapa.style.flexBasis  = Math.max(MIN, Math.min(MAX, datos.mapa))+"px";
+    if(datos.lista) colLista.style.flexBasis = Math.max(MIN, Math.min(MAX, datos.lista))+"px";
+  }
+  function guardar(){
+    const datos = {
+      mapa:  Math.round(colMapa.getBoundingClientRect().width),
+      lista: Math.round(colLista.getBoundingClientRect().width)
+    };
+    try{ localStorage.setItem(CLAVE, JSON.stringify(datos)); }catch(_){}
+  }
+
+  function habilitarArrastre(handle, columna, invertir){
+    let arrancando = false, xInicial = 0, anchoInicial = 0, pid = null;
+    handle.addEventListener("pointerdown", ev=>{
+      arrancando = true; pid = ev.pointerId;
+      xInicial = ev.clientX;
+      anchoInicial = columna.getBoundingClientRect().width;
+      handle.classList.add("arrastrando");
+      handle.setPointerCapture(pid);
+      document.body.style.userSelect = "none";
+      ev.preventDefault();
+    });
+    handle.addEventListener("pointermove", ev=>{
+      if(!arrancando) return;
+      let delta = ev.clientX - xInicial;
+      if(invertir) delta = -delta;
+      const nuevo = Math.max(MIN, Math.min(MAX, anchoInicial + delta));
+      columna.style.flexBasis = nuevo+"px";
+      if(mapaChile) mapaChile.invalidateSize();
+    });
+    function terminar(ev){
+      if(!arrancando) return;
+      arrancando = false;
+      handle.classList.remove("arrastrando");
+      try{ handle.releasePointerCapture(pid); }catch(_){}
+      document.body.style.userSelect = "";
+      guardar();
+      if(mapaChile) setTimeout(()=>mapaChile.invalidateSize(), 60);
+    }
+    handle.addEventListener("pointerup", terminar);
+    handle.addEventListener("pointercancel", terminar);
+  }
+
+  aplicarGuardado();
+  habilitarArrastre(rMapa, colMapa, false);
+  habilitarArrastre(rLista, colLista, true);
+}
+
 /* ---------- Inicio + auto-actualización cada 15 min ---------- */
 cargarGeometrias();
 cargarDatos();
+initColumnasAjustables();
 setInterval(cargarDatos, 15*60*1000);
 </script>
 </body>
